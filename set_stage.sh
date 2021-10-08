@@ -30,63 +30,188 @@ echo
 echo "================================================================"
 fi
 
-unset PKGSTAGE
-declare -A PKGSTAGE
 
-DO_SHOW_VERSIONS(){
+################################################################
+#
+DO_COLLECT_VERSIONS(){
+    unset PKGSTAGE
+    declare -gA PKGSTAGE
+    unset LINES
+    declare -gA LINES
+    
     MAXPKGLEN=0
     MAXSTAGELEN=0
     MAXVERLEN=0
+    
     for i in ${!PACKAGES[*]};do
 	PACKAGE=${PACKAGES[$i]}
-	
-	echo "Package: $PACKAGE"
 	[ $MAXPKGLEN -lt ${#PACKAGE} ] && MAXPKGLEN=${#PACKAGE}
 
 	unset MAXVER
-	unset LINES
-	declare -A LINES
 	# round1, collect info
 	for j in ${!STAGES[*]};do
-	    [ ! -d $DIRPATH/${STAGES[j]} ] && echo "      ERROR: ${STAGES[j]} is not a directory" && continue
+	    #[ ! -d $DIRPATH/${STAGES[j]} ] && echo "      ERROR: ${STAGES[j]} is not a directory" && continue
+	    [ ! -d $DIRPATH/${STAGES[j]} ] && continue
 	    STAGE="${STAGES[j]}"
 	    [ $MAXSTAGELEN -lt ${#STAGE} ] && MAXPSTAGELEN=${#STAGE}
-	    
+
 	    #Get version of the package
 	    VER="$(dpkg -I $(ls $DIRPATH/$STAGE/$PACKAGE*|sort --version-sort|tail -1)|awk '/Version/{print $2}')"
-	    
+
 	    #check if it's the higest we have for this package
 	    MAXVER=$(echo "$MAXVER $VER"|xargs -n1|sort --version-sort|tail -1)
 	    [ $MAXVERLEN -lt ${#VER} ] && MAXVERLEN=${#VER}
-	    
+
 	    LINES[${#LINES[*]}]="$PACKAGE,$STAGE,$VER"
 	done
-
-	#round2 - print it out
+	
+	#round2 - find max version of the package
 	for j in $(seq 0 $((${#LINES[*]}-1)));do
-	    #echo " >>>>>>>>>>>>>>>>  $j - ${LINES[$j]}|"
-	    PACKAGE=$(echo ${LINES[$j]}|cut -d, -f1)
-	    STAGE=$(echo ${LINES[$j]}|cut -d, -f2)
-	    VER=$(echo ${LINES[$j]}|cut -d, -f3)
+	     PACKAGE=$(echo ${LINES[$j]}|cut -d, -f1)
+	     STAGE=$(echo ${LINES[$j]}|cut -d, -f2)
+	     VER=$(echo ${LINES[$j]}|cut -d, -f3)
 	    
-	    if [ "$VER" == "$MAXVER" ];then
-		LATEST="<===="
-		PKGSTAGE["$PACKAGE"]="$STAGE $VER"
-	    else
-                LATEST=" "
-            fi
-	    #echo "   >>>>>  %-${MAXPKGLEN}s  %${MAXPSTAGELEN}s  %s"
-	    #echo "     >>>>>  ${LINES[$j]}"
-	    printf "  %-${MAXPSTAGELEN}s: %${MAXVERLEN}s %s\n" $STAGE $VER "$LATEST"
-	done
-	echo
+	     if [ "$VER" == "$MAXVER" ];then
+	 	LATEST="<===="
+	 	PKGSTAGE["$PACKAGE"]="$STAGE $VER"
+	     else
+                 LATEST=" "
+             fi
+	 done
     done
 
+} # DO_COLLECT_VERSIONS
+
+################################################################
+#
+DO_SHOW_VERSIONS(){
+    
+#    for i in ${!PACKAGES[*]};do
+#	PACKAGE=${PACKAGES[$i]}
+
+    unset PPACKAGE
+    for j in $(seq 0 $((${#LINES[*]}-1)));do
+	#echo " >>>>>>>>>>>>>>>>  $j - ${LINES[$j]}|"
+	PACKAGE=$(echo ${LINES[$j]}|cut -d, -f1)
+	STAGE=$(echo ${LINES[$j]}|cut -d, -f2)
+	VER=$(echo ${LINES[$j]}|cut -d, -f3)
+	
+	if [ "$PPACKAGE" != "$PACKAGE" ];then
+	    [ -n "$PPACKAGE" ] && echo
+	    echo "Package: $PACKAGE"
+	    PPACKAGE=$PACKAGE
+	    stage_level=0
+	fi
+
+	let stage_level++
+	if [ "$VER" == "$MAXVER" ];then
+	    LATEST="<===="
+	else
+            LATEST=" "
+        fi
+	#echo "   >>>>>  %-${MAXPKGLEN}s  %${MAXPSTAGELEN}s  %s"
+	#echo "     >>>>>  ${LINES[$j]}"
+	printf "  %2d-%-${MAXPSTAGELEN}s: %${MAXVERLEN}s %s\n" $stage_level $STAGE $VER "$LATEST"
+    done
+    echo
+    
     for i in ${!PKGSTAGE[*]};do
 	printf "%-${MAXPKGLEN}s:   %${MAXPSTAGELEN}s = %s\n" $i ${PKGSTAGE[$i]}
     done
 } # DO_SHOW_VERSIONS
 
+################################################################
+#
+
+DO_MENU(){
+    RESULT_FILE=$1
+
+    DO_COLLECT_VERSIONS
+    MSG="$(DO_SHOW_VERSIONS)"
+    State=$(echo "$MSG"|sed 's/$/\\n/g')
+    MAXLEN=0
+    
+    while read line;do
+	[ -n "$DEBUG" ] && echo ">>>>>>MAXLEN=$MAXLEN, len=${#line}, line=>$line<"
+	[ ${#line} -gt $MAXLEN ] && MAXLEN=${#line}
+    done <<< "$(echo "$MSG")"
+    MWIDTH=$(($MAXLEN+10))
+    LINES=$(echo "$MSG"|wc -l)
+    
+    OPTIONS=("0" "exit")
+    MCNT=1
+    ALT=":"
+    for i in ${!PACKAGES[*]};do
+	PACKAGE=${PACKAGES[$i]}
+	OPTIONS+=("$MCNT" "Increase $PACKAGE")
+	ALT+="$MCNT:"
+	let MCNT++
+	OPTIONS+=("$MCNT" "Decrease $PACKAGE")
+	ALT+="$MCNT:"
+	let MCNT++
+    done
+
+    MHEIGHT=$(($LINES+$MCNT+6))
+    if [ -n "$DEBUG" ];then
+	echo "OPTIONS=${OPTIONS[*]}"
+	echo MHEIGHT=$MHEIGHT
+	echo MWIDTH=$MWIDTH
+	echo MCNT=$MCNT
+	return
+    fi
+
+    #    RESULT_FILE=$(mktemp -t set_stage_XXXXXXXX)
+    dialog --backtitle "Staging status and changes" \
+	   --title "action" \
+	   --menu "$State\n" $MHEIGHT $MWIDTH $MCNT \
+	   "${OPTIONS[@]}" 2>$RESULT_FILE
+
+    save_rc=$?
+    [ $save_rc -ne 0 ] && echo "ERROR: $save_rc" >>$RESULT_FILE
+} # DO_MENU
+
+
+################################################################
+#
+DO_CHANGE_STAGE(){
+    DIR="$1"  # Increase or Decrease
+    WHAT="$2" # package name
+    PKG_INFO="${PKGSTAGE[$WHAT]}"
+    PKG_STAGE=$(echo "$PKG_INFO"|awk '{print $1}')
+    PKG_VER=$(echo "$PKG_INFO"|awk '{print $2}')
+    
+    #    echo "DIRPATH=$DIRPATH" >>/tmp/q
+    PKGPATH=$DIRPATH/$PKG_STAGE/$WHAT-$PKG_VER.deb
+
+    for i in ${!STAGES[*]};do
+	[ "${STAGES[i]}" == $PKG_STAGE ] && break
+    done
+
+    if [[ "$DIR" =~ ^D ]];then
+	[ $i -ge 1 ] && CMD="rm -fv $PKGPATH" || CMD="# already first level, nothing to do"
+    elif [[ "$DIR" =~ ^I ]];then
+	NEWPKGPATH=$DIRPATH/${STAGES[$(($i+1))]}/$WHAT-$PKG_VER.deb
+	[ $i -lt $((${#STAGES[*]}-1)) ] && CMD="cp -av $PKGPATH $NEWPKGPATH" || CMD="# already last level, nothing to do"
+    else
+	DEB+="ERRROR, unknown direction:$DIR"
+    fi
+
+    RESULT="$(eval $CMD 2>&1)"
+    MSG="$(echo -e "$CMD\n$RESULT")"
+
+    MAXLEN=0
+    while read line;do
+	[ ${#line} -gt $MAXLEN ] && MAXLEN=${#line}
+    done <<< "$(echo "$MSG")"
+
+    MWIDTH=$(($MAXLEN+10))
+    LINES=$(echo "$MSG"|wc -l)
+    MHEIGHT=$(($LINES+6))
+    MSG=$(echo "$MSG"|sed 's/$/\\n/g')
+    dialog --msgbox "$MSG\n"  $MHEIGHT $MWIDTH
+
+    return 0
+} # DO_CHANGE_STAGE
 
 #TODO:
 #  use dialog to give a small menu
@@ -95,25 +220,38 @@ DO_SHOW_VERSIONS(){
 #   show what is in each stage
 #   move a package to next stage
 
-#menu1:
-#  docker:
-#    development: 0.13
-#    stage5: 0.11
-#
 
+if [ -n "$DEBUG" ];then
+    clear
+    DO_MENU
+    exit
+fi
 
-# ch=( "1" "Fri, 20/3/15" "2" "Sun, 21/6/15" "3" "Wed, 23/9/15" "4" "Mon, 21/12/15")
+#DO_COLLECT_VERSIONS
+#DO_SHOW_VERSIONS
+#exit
 
+while true;do
+    clear
+    #ACTION=$(DO_MENU)
+    #RESULT_FILE=$(mktemp -t set_stage_XXXXXXXX)
+    RESULT_FILE=/tmp/resultfile
+    DO_MENU  $RESULT_FILE
+    #echo -e "================"
+    ACTION=$(<$RESULT_FILE)
+    if [ "$ACTION" == "0" ];then
+	clear
+	echo "Thank you and goodbye"
+	exit
+    elif echo ":$ALT:"|grep -q ":$ACTION:";then
+	TaskNo=$(($ACTION*2+1))
+	DO_CHANGE_STAGE ${OPTIONS[$TaskNo]}
+    else
+	dialog --infobox "Unknown action: $ACTION\n"  10 30
+	exit
+    fi
 
-#dialog --title "Equinoxes and Solistices"  \
-#--radiolist "When is the Winter Solictice?" 15 60 4 \
-#"${ch[0]}" "${ch[1]}" ON \
-#"${ch[2]}" "${ch[3]}" OFF \
-#"${ch[4]}" "${ch[5]}" OFF \
-#"${ch[6]}" "${ch[7]}" OFF >$TMPFILE
-
-
-
-DO_SHOW_VERSIONS
-#foo="$(DO_SHOW_VERSIONS)"
-#echo "$foo"
+    #echo "$ACTION"
+    #echo "================"
+    #rm -f $RESULT_FILE
+done
