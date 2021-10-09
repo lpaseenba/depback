@@ -111,7 +111,8 @@ DO_SHOW_VERSIONS(){
         fi
 	#echo "   >>>>>  %-${MAXPKGLEN}s  %${MAXPSTAGELEN}s  %s"
 	#echo "     >>>>>  ${LINES[$j]}"
-	printf "  %2d-%-${MAXPSTAGELEN}s: %${MAXVERLEN}s %s\n" $stage_level $STAGE $VER "$LATEST"
+	#printf "  %2d-%-${MAXPSTAGELEN}s: %${MAXVERLEN}s %s\n" $stage_level $STAGE $VER "$LATEST"
+	printf "  %-${MAXPSTAGELEN}s: %${MAXVERLEN}s %s\n" $STAGE $VER "$LATEST"
     done
     echo
     
@@ -143,10 +144,10 @@ DO_MENU(){
     ALT=":"
     for i in ${!PACKAGES[*]};do
 	PACKAGE=${PACKAGES[$i]}
-	OPTIONS+=("$MCNT" "Increase $PACKAGE")
+	OPTIONS+=("$MCNT" "Decrease $PACKAGE")
 	ALT+="$MCNT:"
 	let MCNT++
-	OPTIONS+=("$MCNT" "Decrease $PACKAGE")
+	OPTIONS+=("$MCNT" "Increase $PACKAGE")
 	ALT+="$MCNT:"
 	let MCNT++
     done
@@ -179,6 +180,7 @@ DO_CHANGE_STAGE(){
     PKG_INFO="${PKGSTAGE[$WHAT]}"
     PKG_STAGE=$(echo "$PKG_INFO"|awk '{print $1}')
     PKG_VER=$(echo "$PKG_INFO"|awk '{print $2}')
+    unset CMD
     
     #    echo "DIRPATH=$DIRPATH" >>/tmp/q
     PKGPATH=$DIRPATH/$PKG_STAGE/$WHAT-$PKG_VER.deb
@@ -188,18 +190,29 @@ DO_CHANGE_STAGE(){
     done
 
     if [[ "$DIR" =~ ^D ]];then
-	[ $i -ge 1 ] && CMD="rm -fv $PKGPATH" || CMD="# already first level, nothing to do"
+	[ $i -ge 1 ] && CMD="rm -fv $PKGPATH $DIRPATH/$PKG_STAGE/Packages.gz" || CMD="# already first level, nothing to do"
     elif [[ "$DIR" =~ ^I ]];then
-	NEWPKGPATH=$DIRPATH/${STAGES[$(($i+1))]}/$WHAT-$PKG_VER.deb
-	[ $i -lt $((${#STAGES[*]}-1)) ] && CMD="cp -av $PKGPATH $NEWPKGPATH" || CMD="# already last level, nothing to do"
+	NEWPKGDIR=$DIRPATH/${STAGES[$(($i+1))]}
+	NEWPKGPATH=$NEWPKGDIR/$WHAT-$PKG_VER.deb
+	if [ $i -lt $((${#STAGES[*]}-1)) ];then
+            CMD=("cp -av $PKGPATH $NEWPKGPATH" "rm -fv $DIRPATH/$PKG_STAGE/Packages.gz $NEWPKGDIR/Packages.gz")
+        else
+            CMD="# already last level, nothing to do"
+        fi
     else
 	DEB+="ERRROR, unknown direction:$DIR"
     fi
 
-    RESULT="$(eval $CMD 2>&1)"
-    MSG="$(echo -e "$CMD\n$RESULT")"
+    unset RESULT
+    unset CMDD
+    for i in ${!CMD[*]};do
+        CMDD+="${CMD[i]}\n"
+        RESULT="$RESULT\n$(eval ${CMD[i]} 2>&1)"
+    done
 
+    MSG="$(echo -e "${CMDD}$RESULT")"
     MAXLEN=0
+
     while read line;do
 	[ ${#line} -gt $MAXLEN ] && MAXLEN=${#line}
     done <<< "$(echo "$MSG")"
@@ -207,7 +220,7 @@ DO_CHANGE_STAGE(){
     MWIDTH=$(($MAXLEN+10))
     LINES=$(echo "$MSG"|wc -l)
     MHEIGHT=$(($LINES+6))
-    MSG=$(echo "$MSG"|sed 's/$/\\n/g')
+    MSG=$(echo "$MSG"|sed 's/$/\\n/g;s/\;/\\n/g')
     dialog --msgbox "$MSG\n"  $MHEIGHT $MWIDTH
 
     return 0
@@ -241,6 +254,7 @@ while true;do
     ACTION=$(<$RESULT_FILE)
     if [ "$ACTION" == "0" ];then
 	clear
+        ${0%/*}/update_repo_data.sh
 	echo "Thank you and goodbye"
 	exit
     elif echo ":$ALT:"|grep -q ":$ACTION:";then
