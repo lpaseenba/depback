@@ -169,6 +169,7 @@ DO_MENU(){
 
     save_rc=$?
     [ $save_rc -ne 0 ] && echo "ERROR: $save_rc" >>$RESULT_FILE
+    return $save_rc
 } # DO_MENU
 
 
@@ -250,6 +251,7 @@ while true;do
     #RESULT_FILE=$(mktemp -t set_stage_XXXXXXXX)
     RESULT_FILE=/tmp/resultfile
     DO_MENU  $RESULT_FILE
+    save_rc=$?
     #echo -e "================"
     ACTION=$(<$RESULT_FILE)
     if [ "$ACTION" == "0" ];then
@@ -260,12 +262,14 @@ while true;do
     elif echo ":$ALT:"|grep -q ":$ACTION:";then
 	TaskNo=$(($ACTION*2+1))
 	DO_CHANGE_STAGE ${OPTIONS[$TaskNo]}
+    elif [ $save_rc -eq 1 ];then # selected "cancel"
+        dialog --infobox "\n    action cancelled"  5 30
+        exit
+    elif [ $save_rc -eq 255 ];then # hit escape
+        dialog --infobox "\n  <esc> - action aborted"  5 30
+        exit
     else
-	dialog --infobox "Unknown action: $ACTION\n"  10 30
+	dialog --infobox "Unknown action: $ACTION\nsave_rc=$save_rc"  10 30
 	exit
     fi
-
-    #echo "$ACTION"
-    #echo "================"
-    #rm -f $RESULT_FILE
 done
