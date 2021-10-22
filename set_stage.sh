@@ -8,7 +8,8 @@
 DIRPATH=/var/www/html/bitaccess/dists
 OS_CODENAME=(xenial focal)
 STAGES=($(echo {development,qa,staging,release/stage{1..5}}))
-PACKAGES=("docker_cloud_btm" "provisioner")
+#PACKAGES=("docker_cloud_btm" "provisioner") # package name can't include "_"
+PACKAGES=("docker-btm" "provisioner")
 
 if [ "$1" == "show " ];then
     echo "Staging directories:"
@@ -60,11 +61,15 @@ DO_COLLECT_VERSIONS(){
 	        [ $MAXSTAGELEN -lt ${#STAGE} ] && MAXPSTAGELEN=${#STAGE}
 
 	        #Get version of the package
-	        VER="$(dpkg -I $(ls ${DIRPATH}/${codename}/$STAGE/binary-all/$PACKAGE*|sort --version-sort|tail -1)|awk '/Version/{print $2}')"
+	        VER="$(dpkg -I $(ls ${DIRPATH}/${codename}/$STAGE/binary-all/$PACKAGE* 2>/dev/null|sort --version-sort|tail -1) 2>/dev/null|awk '/Version/{print $2}')"
 
-	        #check if it's the higest we have for this package
-	        MAXVER[$PACKAGE]=$(echo "${MAXVER[$PACKAGE]} $VER"|xargs -n1|sort --version-sort|tail -1)
-	        [ $MAXVERLEN -lt ${#VER} ] && MAXVERLEN=${#VER}
+                if [ -z "$VER" ];then
+                    VER=NA
+                else
+	            #check if it's the higest we have for this package
+	            MAXVER[$PACKAGE]=$(echo "${MAXVER[$PACKAGE]} $VER"|xargs -n1|sort --version-sort|tail -1)
+	            [ $MAXVERLEN -lt ${#VER} ] && MAXVERLEN=${#VER}
+                fi
 
 	        LINES[${#LINES[*]}]="$PACKAGE,$STAGE,$VER"
 	    done
@@ -246,6 +251,7 @@ if [ -n "$DEBUG" ];then
     DO_MENU
     exit
 fi
+
 
 #DO_COLLECT_VERSIONS
 #DO_SHOW_VERSIONS
