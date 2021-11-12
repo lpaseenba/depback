@@ -7,9 +7,10 @@
 
 DIRPATH=/var/www/html/bitaccess/dists
 OS_CODENAME=(xenial focal)
-STAGES=($(echo {development,qa,staging,release/stage{1..5}}))
+STAGES=($(echo {development,qa,staging,stage{1..5}}))
 #PACKAGES=("docker_cloud_btm" "provisioner") # package name can't include "_"
-PACKAGES=("docker-btm" "provisioner")
+#PACKAGES=("docker-btm" "provisioner")
+PACKAGES=("ba-btm-software")
 
 if [ "$1" == "show " ];then
     echo "Staging directories:"
@@ -58,7 +59,7 @@ DO_COLLECT_VERSIONS(){
 	        [ ! -d ${DIRPATH}/${codename}/${STAGES[j]}/binary-all ] && echo "      ERROR: ${DIRPATH}/${codename}/${STAGES[j]}/binary-all is not a directory" && exit #continue
 	        #[ ! -d ${DIRPATH}/${codename}/${STAGES[j]}/binary-all ] && continue
 	        STAGE="${STAGES[j]}"
-	        [ $MAXSTAGELEN -lt ${#STAGE} ] && MAXPSTAGELEN=${#STAGE}
+	        [ $MAXSTAGELEN -lt ${#STAGE} ] && MAXSTAGELEN=${#STAGE}
 
 	        #Get version of the package
 	        VER="$(dpkg -I $(ls ${DIRPATH}/${codename}/$STAGE/binary-all/$PACKAGE* 2>/dev/null|sort --version-sort|tail -1) 2>/dev/null|awk '/Version/{print $2}')"
@@ -97,7 +98,7 @@ DO_COLLECT_VERSIONS(){
 DO_SHOW_VERSIONS(){
 
     for i in ${!PKGSTAGE[*]};do
-	printf "%-${MAXPKGLEN}s:   %${MAXPSTAGELEN}s = %s\n" $i ${PKGSTAGE[$i]}
+	printf "%-${MAXPKGLEN}s:   %${MAXSTAGELEN}s = %s\n" $i ${PKGSTAGE[$i]}
     done
     echo
 
@@ -121,10 +122,10 @@ DO_SHOW_VERSIONS(){
 	else
             LATEST=" "
         fi
-	#echo "   >>>>>  %-${MAXPKGLEN}s  %${MAXPSTAGELEN}s  %s"
+	#echo "   >>>>>  %-${MAXPKGLEN}s  %${MAXSTAGELEN}s  %s"
 	#echo "     >>>>>  ${LINES[$j]}"
-	#printf "  %2d-%-${MAXPSTAGELEN}s: %${MAXVERLEN}s %s\n" $stage_level $STAGE $VER "$LATEST"
-	printf "  %-${MAXPSTAGELEN}s: %${MAXVERLEN}s %s\n" $STAGE $VER "$LATEST"
+	#printf "  %2d-%-${MAXSTAGELEN}s: %${MAXVERLEN}s %s\n" $stage_level $STAGE $VER "$LATEST"
+	printf "  %-${MAXSTAGELEN}s: %${MAXVERLEN}s %s\n" $STAGE $VER "$LATEST"
     done
 
 } # DO_SHOW_VERSIONS
@@ -165,6 +166,7 @@ DO_MENU(){
 	echo "OPTIONS=${OPTIONS[*]}"
 	echo MHEIGHT=$MHEIGHT
 	echo MWIDTH=$MWIDTH
+        echo MAXSTAGELEN=$MAXSTAGELEN
 	echo MCNT=$MCNT
 	return
     fi
