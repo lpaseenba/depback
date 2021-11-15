@@ -3,11 +3,14 @@
 #
 
 #First check if any new package is in upload
-LATEST=$(ls /var/www/html/bitaccess/dists/upload/*|sort --version-sort|tail -1)
-if [ ! -e /var/www/html/bitaccess/dists/development/binary-all/${LATEST##*/} ];then
-    echo "copying $LATEST to /var/www/html/bitaccess/dists/development/"
-    cp -av $LATEST /var/www/html/bitaccess/dists/development/binary-all/
-fi
+for PACKAGE in $((cd /var/www/html/bitaccess/dists/upload/;ls *.deb)|sed 's/\(^[a-zA-Z-]*\)-[0-9]*[-\.]*.*/\1/'|sort -u);do
+    LATEST=$(ls /var/www/html/bitaccess/dists/upload/${PACKAGE}*.deb|sort --version-sort|tail -1)
+    if [ ! -e /var/www/html/bitaccess/dists/development/binary-all/${LATEST##*/} ];then
+        echo "copying $LATEST to /var/www/html/bitaccess/dists/development/"
+        cp -av $LATEST /var/www/html/bitaccess/dists/development/binary-all/
+        rm -f /var/www/html/bitaccess/dists/development/binary-all/Packages.gz
+    fi
+done
 
 PREFIX=/var/www/html/bitaccess
 
