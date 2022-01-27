@@ -243,10 +243,7 @@ DO_CHANGE_STAGE(){
 #TODO:
 #  use dialog to give a small menu
 #   base on stage or package
-#   show what stage each package is at
-#   show what is in each stage
-#   move a package to next stage
-
+#  allow multiple versions
 
 if [ -n "$DEBUG" ];then
     clear
