@@ -35,14 +35,14 @@ CURRENT_PACKAGE=${PACKAGES[0]}
 DO_MARK_VERSION(){
     PACKAGE="$1"
     VER="$2"
-    
+
     # Mark the stages where the package is current
     for j in $(seq 0 $((${#PKG_LINES[*]}-1)));do
 	PACKAGE=$(echo ${PKG_LINES[$j]}|cut -d, -f1)
 	STAGE=$(echo ${PKG_LINES[$j]}|cut -d, -f2)
 	VER=$(echo ${PKG_LINES[$j]}|cut -d, -f3)
 	
-	if [ "$VER" == "${MAXVER[$PACKAGE]}" ];then
+	if [ "$VER" == "${CURRENT_VERSION}" ];then
 	    LATEST="<===="
 	    PKGSTAGE["$PACKAGE"]="$STAGE $VER"
 	else
@@ -73,6 +73,7 @@ DO_COLLECT_VERSIONS(){
 	[ $MAXPKGLEN -lt ${#PACKAGE} ] && MAXPKGLEN=${#PACKAGE}
 
         # round1, collect info
+        CURRENT_STAGE=""
 	for j in ${!STAGES[*]};do
             for codename in ${OS_CODENAME};do
 	        [ ! -d ${DIRPATH}/${codename}/${STAGES[j]}/binary-all ] && echo "      ERROR: ${DIRPATH}/${codename}/${STAGES[j]}/binary-all is not a directory" && exit #continue
@@ -80,30 +81,41 @@ DO_COLLECT_VERSIONS(){
 	        STAGE="${STAGES[j]}"
 	        [ $MAXSTAGELEN -lt ${#STAGE} ] && MAXSTAGELEN=${#STAGE}
 
-	        #Get version of the package
-	        VER="$(dpkg -I $(ls ${DIRPATH}/${codename}/$STAGE/binary-all/$PACKAGE* 2>/dev/null|sort --version-sort|tail -1) 2>/dev/null|awk '/Version/{print $2}')"
-                if [ -z "$VER" ];then
-                    if [ "$PACKAGE" == "ba-test" ];then
-                        #For testing
-                        VER=$(ls ${DIRPATH}/${codename}/$STAGE/binary-all/$PACKAGE* 2>/dev/null |sed "s/.*$PACKAGE-//;s/.deb//"|sort --version-sort|tail -1)
+                for PKGVER in $(ls ${DIRPATH}/${codename}/$STAGE/binary-all/$PACKAGE* 2>/dev/null|sort --version-sort --reverse|head -10);do
+                    #Get version of the package
+	            VER="$(dpkg -I $PKGVER 2>/dev/null|awk '/Version/{print $2}'|tr -d ' ')"
+                    if [ -z "$VER" ];then
+                        if [ "$PACKAGE" == "ba-test" ];then
+                            #For testing
+                            VER=$(echo $PKGVER|sed "s/.*$PACKAGE-//;s/.deb//"|sort --version-sort|tail -1)
+                        fi
                     fi
-                fi
-                if [ -z "$VER" ];then
-                    VER=NA
-                else
-	            #check if it's the higest we have for this package
-	            MAXVER[$PACKAGE]=$(echo "${MAXVER[$PACKAGE]} $VER"|xargs -n1|sort --version-sort|tail -1)
-	            [ $MAXVERLEN -lt ${#VER} ] && MAXVERLEN=${#VER}
-                fi
 
-	        PKG_LINES[${#PKG_LINES[@]}]="$PACKAGE,$STAGE,$VER"
-                if ! echo "${PKGVERSIONS[$PACKAGE]}"|grep -q "$VER ";then
-                    PKGVERSIONS[$PACKAGE]+="$VER "
-                fi
+                    if [ -z "$VER" ];then
+                        VER=NA
+                    else
+	                #check if it's the higest we have for this package
+	                MAXVER[$PACKAGE]=$(echo "${MAXVER[$PACKAGE]} $VER"|xargs -n1|sort --version-sort|tail -1)
+	                [ $MAXVERLEN -lt ${#VER} ] && MAXVERLEN=${#VER}
+                    fi
+
+                    if [ "$CURRENT_STAGE" != "$STAGE" ];then
+                        PKG_LINES[${#PKG_LINES[@]}]="$PACKAGE,$STAGE,$VER"
+                        CURRENT_STAGE="$STAGE"
+                    fi
+
+                    if [ "$VER" != "NA" ];then
+                        if ! echo "${PKGVERSIONS[$PACKAGE]}"|grep -q "$VER ";then
+                            PKGVERSIONS[$PACKAGE]+="$VER "
+                        fi
+                    fi
+                done
 	    done
         done
+
         PKGVERSIONS[$PACKAGE]="$(echo ${PKGVERSIONS[$PACKAGE]}|xargs -n1|sort --version-sort|xargs)"
-        DO_MARK_VERSION $PACKAGE ${MAXVER[$PACKAGE]} 
+        [ -z "$CURRENT_VERSION" ] && CURRENT_VERSION=${MAXVER[$CURRENT_PACKAGE]}
+        DO_MARK_VERSION $PACKAGE $CURRENT_VERSION
     done
 
 } # DO_COLLECT_VERSIONS
@@ -112,31 +124,40 @@ DO_COLLECT_VERSIONS(){
 #
 DO_SHOW_VERSIONS(){
 
-    for i in ${!PKGSTAGE[*]};do
-	printf "%-${MAXPKGLEN}s:   %${MAXSTAGELEN}s = %s\n" $i ${PKGSTAGE[$i]}
-    done
-    echo
+    # for i in ${!PKGSTAGE[*]};do
+    #     printf "%-${MAXPKGLEN}s:   %${MAXSTAGELEN}s = %s\n" $i ${PKGSTAGE[$i]}
+    # done
+    # echo
+
+    # https://linux.die.net/man/1/dialog
+    # \Z0 through 7 are the ANSI used in curses: black, red, green, yellow, blue, magenta, cyan and white respectively
+    # Bold is set by 'b', reset by 'B'
+    # Reverse is set by 'r', reset by 'R'.
+    # Underline is set by 'u', reset by 'U'.
+    # The settings are cumulative, e.g., "\Zb\Z1" makes the following text bold (perhaps bright) red.
+    # Restore normal settings with "\Zn".
+    bold="\Z3\Zb"
+    normal="\Zn"
 
     #unset PPACKAGE
-    echo "Package: $CURRENT_PACKAGE"
-    stage_level=0
+    echo -e "\n  Package: ${bold}$CURRENT_PACKAGE${normal} - ${bold}${CURRENT_VERSION}${normal}\n"
+    CURRENT_STAGE=""
     for j in $(seq 0 $((${#PKG_LINES[*]}-1)));do
 	#echo " >>>>>>>>>>>>>>>>  $j - ${PKG_LINES[$j]}|"
 	PACKAGE=$(echo ${PKG_LINES[$j]}|cut -d, -f1)
         [ "$PACKAGE" != "$CURRENT_PACKAGE" ] && continue
 	STAGE=$(echo ${PKG_LINES[$j]}|cut -d, -f2)
+        [ "$CURRENT_STAGE" == "$STAGE" ] && continue
+        CURRENT_STAGE="$STAGE"
 	VER=$(echo ${PKG_LINES[$j]}|cut -d, -f3)
 
-	let stage_level++
-	if [ "$VER" == "${MAXVER[$PACKAGE]}" ];then
-	    LATEST="<===="
+	if [ "$VER" == "$CURRENT_VERSION" ];then
+	    CURRENT="<===="
 	else
-            LATEST=" "
+            CURRENT=" "
         fi
-	#echo "   >>>>>  %-${MAXPKGLEN}s  %${MAXSTAGELEN}s  %s"
-	#echo "     >>>>>  ${PKG_LINES[$j]}"
-	#printf "  %2d-%-${MAXSTAGELEN}s: %${MAXVERLEN}s %s\n" $stage_level $STAGE $VER "$LATEST"
-	printf "  %-${MAXSTAGELEN}s: %${MAXVERLEN}s %s\n" $STAGE $VER "$LATEST"
+
+	printf "  %-${MAXSTAGELEN}s: %-${MAXVERLEN}s %s\n" $STAGE "$VER" "$CURRENT"
     done
 
 } # DO_SHOW_VERSIONS
@@ -165,10 +186,10 @@ DO_MENU(){
     MCNT=3
     ALT=":"
     PACKAGE=$CURRENT_PACKAGE
-    OPTIONS+=("$MCNT" "Decrease $PACKAGE")
+    OPTIONS+=("$MCNT" "Decrease $PACKAGE $VERSION")
     ALT+="$MCNT:"
     let MCNT++
-    OPTIONS+=("$MCNT" "Increase $PACKAGE")
+    OPTIONS+=("$MCNT" "Increase $PACKAGE $VERSION")
     ALT+="$MCNT:"
     let MCNT++
 
@@ -185,6 +206,7 @@ DO_MENU(){
     #    RESULT_FILE=$(mktemp -t set_stage_XXXXXXXX)
     dialog --backtitle "Staging status and changes" \
 	   --title "action" \
+           --colors \
 	   --menu "$State\n" $MHEIGHT $MWIDTH $MCNT \
 	   "${OPTIONS[@]}" 2>$RESULT_FILE
 
@@ -196,45 +218,84 @@ DO_MENU(){
 ################################################################
 # select what package to work on
 DO_MENU_PACKAGE(){
-    State="    Select package to work with"
-    OPTIONS=("0" "return to main menu")
-    MCNT=1
-    MAXLEN=${#State}
+
+    PState="    Select package to work with"
+    POPTIONS=("0" "return to main menu")
+    PMCNT=1
+    PMAXLEN=${#PState}
     ALT=":"
     for i in ${!PACKAGES[*]};do
-        OPTIONS+=("$MCNT" ${PACKAGES[$i]})
-        ALT+="$MCNT:"
-        let MCNT++
-        LEN=$((${PACKAGES[$i]}+4))
+        POPTIONS+=("$PMCNT" ${PACKAGES[$i]})
+        ALT+="$PMCNT:"
+        let PMCNT++
+        LEN=$((${#PACKAGES[$i]}+4))
         [ $LEN -gt $MAXLEN ] && MAXLEN=$LEN
     done
 
-    MWIDTH=$(($MAXLEN+10))
-    LINES=$(echo "$State"|wc -l)
-    MHEIGHT=$(($LINES+$MCNT+10))
+    PMWIDTH=$(($PMAXLEN+10))
+    PLINES=$(echo "$PState"|wc -l)
+    PMHEIGHT=$(($PLINES+$PMCNT+10))
+
+#	   --menu "$State\n" $MHEIGHT $MWIDTH $MCNT \
+#	   "${OPTIONS[@]}" \
+#           --and-widget --begin 40 40 \
     dialog --backtitle "Select Package" \
 	   --title "package" \
-	   --menu "$State\n" $MHEIGHT $MWIDTH $MCNT \
-	   "${OPTIONS[@]}" 2>$RESULT_FILE
+	   --menu "$PState\n" $PMHEIGHT $PMWIDTH $PMCNT \
+	   "${POPTIONS[@]}" 2>$RESULT_FILE
+    save_rc=$?
     ACTION=$(<$RESULT_FILE)
     MENU="main"
 
-    clear
     if [ "$ACTION" == "0" ];then
        return
     elif echo ":$ALT:"|grep -q ":$ACTION:";then
 	    TaskNo=$(($ACTION*2+1))
-	    CURRENT_PACKAGE=${OPTIONS[$TaskNo]}
+	    CURRENT_PACKAGE=${POPTIONS[$TaskNo]}
+            CURRENT_VERSION=${MAXVER[$CURRENT_PACKAGE]}
     fi
 
-    return 100
+    return $save_rc
 } # DO_MENU_PACKAGE
 
 ################################################################
 # select what version to work on
 DO_MENU_VERSION(){
+
+    VState="    Select version to work with"
+    VOPTIONS=("0" "return to main menu")
+    VMCNT=1
+    VMAXLEN=${#VState}
+    ALT=":"
+
+    for i in ${PKGVERSIONS[$PACKAGE]};do
+        VOPTIONS+=("$VMCNT" $i)
+        ALT+="$VMCNT:"
+        let VMCNT++
+        LEN=$((${#i}+4))
+        [ $LEN -gt $MAXLEN ] && MAXLEN=$LEN
+    done
+
+    VMWIDTH=$(($VMAXLEN+10))
+    VLINES=$(echo "$VState"|wc -l)
+    VMHEIGHT=$(($VLINES+$VMCNT+10))
+
+    dialog --backtitle "Select Version for $CURRENT_PACKAGE" \
+	   --title "version" \
+	   --menu "$VState\n" $VMHEIGHT $VMWIDTH $VMCNT \
+	   "${VOPTIONS[@]}" 2>$RESULT_FILE
+    save_rc=$?
+    ACTION=$(<$RESULT_FILE)
     MENU="main"
-    return 100
+
+    if [ "$ACTION" == "0" ];then
+       return
+    elif echo ":$ALT:"|grep -q ":$ACTION:";then
+	    TaskNo=$(($ACTION*2+1))
+            CURRENT_VERSION=${VOPTIONS[$TaskNo]}
+    fi
+
+    return $save_rc
 } # DO_MENU_VERSION
 
 ################################################################
@@ -249,7 +310,6 @@ DO_CHANGE_STAGE(){
     unset CMD
 
     for codename in ${OS_CODENAME};do
-        #    echo "DIRPATH=${DIRPATH}/${codename}" >>/tmp/q
         PKGPATH=${DIRPATH}/${codename}/$PKG_STAGE/binary-all/$WHAT-$PKG_VER.deb
 
         for i in ${!STAGES[*]};do
@@ -333,7 +393,6 @@ elif [ "$1" == "--show-versions" ];then
         # echo index=${!PKGVERSIONS[*]}
         # echo "=="
         echo "PKGVERSIONS for $PACKAGE"
-        PKGVERSIONS[$PACKAGE]="$(echo ${PKGVERSIONS[$PACKAGE]}|xargs -n1|sort --version-sort|xargs)"
         for i in ${PKGVERSIONS[$PACKAGE]};do
             echo "$i"
             #echo "$i: ${PKGVERSIONS[$i]}"
@@ -351,7 +410,7 @@ elif [ "$1" == "--show-versions" ];then
     # echo "===="
 
     for line in $(seq 0 $((${#PKG_LINES[*]}-1)));do
-        echo "$line: ${PKG_LINES[$line]}"
+        printf "%2d: %s\n" "$line" "${PKG_LINES[$line]}"
     done
 
     echo end of PKG_LINES
@@ -375,12 +434,12 @@ fi
 MENU="main"
 
 while true;do
-    clear
     #ACTION=$(DO_MENU)
     #RESULT_FILE=$(mktemp -t set_stage_XXXXXXXX)
     
     RESULT_FILE=/tmp/resultfile
     if [ "$MENU" == "main" ];then
+        clear
         DO_MENU  $RESULT_FILE
         save_rc=$?
         #echo -e "================"
