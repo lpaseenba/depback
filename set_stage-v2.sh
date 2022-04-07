@@ -44,7 +44,7 @@ DO_MARK_VERSION(){
 	
 	if [ "$VER" == "${CURRENT_VERSION}" ];then
 	    LATEST="<===="
-	    PKGSTAGE["$PACKAGE"]="$STAGE $VER"
+	    PKGSTAGE["$PACKAGE"]="$STAGE $VER"  # The highest stage that this version exist on
 	else
             LATEST=" "
         fi
@@ -64,6 +64,9 @@ DO_COLLECT_VERSIONS(){
     unset PKGVERSIONS
     declare -gA PKGVERSIONS
 
+    unset PKGVERS
+    declare -gA PKGVERS
+
     MAXPKGLEN=0
     MAXSTAGELEN=0
     MAXVERLEN=0
@@ -72,30 +75,33 @@ DO_COLLECT_VERSIONS(){
 	PACKAGE=${PACKAGES[$i]}
 	[ $MAXPKGLEN -lt ${#PACKAGE} ] && MAXPKGLEN=${#PACKAGE}
 
-        # round1, collect info
         CURRENT_STAGE=""
-	for j in ${!STAGES[*]};do
-            for codename in ${OS_CODENAME};do
-	        [ ! -d ${DIRPATH}/${codename}/${STAGES[j]}/binary-all ] && echo "      ERROR: ${DIRPATH}/${codename}/${STAGES[j]}/binary-all is not a directory" && exit #continue
-	        #[ ! -d ${DIRPATH}/${codename}/${STAGES[j]}/binary-all ] && continue
-	        STAGE="${STAGES[j]}"
+        for codename in ${OS_CODENAME};do
+            for j in ${!STAGES[*]};do
+	        STAGE="${STAGES[$j]}"
+	        [ ! -d ${DIRPATH}/${codename}/$STAGE/binary-all ] && echo "      ERROR: ${DIRPATH}/${codename}/${STAGES[j]}/binary-all is not a directory" && exit #continue
 	        [ $MAXSTAGELEN -lt ${#STAGE} ] && MAXSTAGELEN=${#STAGE}
-
                 for PKGVER in $(ls ${DIRPATH}/${codename}/$STAGE/binary-all/$PACKAGE* 2>/dev/null|sort --version-sort --reverse|head -10);do
-                    #Get version of the package
-	            VER="$(dpkg -I $PKGVER 2>/dev/null|awk '/Version/{print $2}'|tr -d ' ')"
-                    if [ -z "$VER" ];then
-                        if [ "$PACKAGE" == "ba-test" ];then
-                            #For testing
-                            VER=$(echo $PKGVER|sed "s/.*$PACKAGE-//;s/.deb//"|sort --version-sort|tail -1)
+                    PKGNAME=${PKGVER##*/}
+                    #use a version cache in PKGVERS so we don't do dpkg multiple times for same package name
+                    if [ -n "${PKGVERS[$PKGNAME]}" ];then 
+                        VER=${PKGVERS[$PKGNAME]}
+                    else
+                        #Get version of the package
+	                VER="$(dpkg -I $PKGVER 2>/dev/null|awk '/Version/{print $2}'|tr -d ' ')"
+                        if [ -z "$VER" ];then
+                            if [ "$PACKAGE" == "ba-test" ];then
+                                #For testing
+                                VER=$(echo $PKGVER|sed "s/.*$PACKAGE-//;s/.deb//"|sort --version-sort|tail -1)
+                            fi
                         fi
+                        PKGVERS[$PKGNAME]=$VER
                     fi
 
                     if [ -z "$VER" ];then
                         VER=NA
                     else
-	                #check if it's the higest we have for this package
-	                MAXVER[$PACKAGE]=$(echo "${MAXVER[$PACKAGE]} $VER"|xargs -n1|sort --version-sort|tail -1)
+                        [ -z "${MAXVER[$PACKAGE]}" ] && MAXVER[$PACKAGE]=$VER # the first version is always the highest due to --version-sort
 	                [ $MAXVERLEN -lt ${#VER} ] && MAXVERLEN=${#VER}
                     fi
 
@@ -113,7 +119,7 @@ DO_COLLECT_VERSIONS(){
 	    done
         done
 
-        PKGVERSIONS[$PACKAGE]="$(echo ${PKGVERSIONS[$PACKAGE]}|xargs -n1|sort --version-sort|xargs)"
+        PKGVERSIONS[$PACKAGE]="$(echo ${PKGVERSIONS[$PACKAGE]}|xargs -n1|sort --version-sort --reverse|xargs)"
         [ -z "$CURRENT_VERSION" ] && CURRENT_VERSION=${MAXVER[$CURRENT_PACKAGE]}
         DO_MARK_VERSION $PACKAGE $CURRENT_VERSION
     done
@@ -244,15 +250,17 @@ DO_MENU_PACKAGE(){
 	   --menu "$PState\n" $PMHEIGHT $PMWIDTH $PMCNT \
 	   "${POPTIONS[@]}" 2>$RESULT_FILE
     save_rc=$?
-    ACTION=$(<$RESULT_FILE)
-    MENU="main"
+    if [ $save_rc -eq 0 ];then
+        ACTION=$(<$RESULT_FILE)
+        MENU="main"
 
-    if [ "$ACTION" == "0" ];then
-       return
-    elif echo ":$ALT:"|grep -q ":$ACTION:";then
+        if [ "$ACTION" == "0" ];then
+            return
+        elif echo ":$ALT:"|grep -q ":$ACTION:";then
 	    TaskNo=$(($ACTION*2+1))
 	    CURRENT_PACKAGE=${POPTIONS[$TaskNo]}
             CURRENT_VERSION=${MAXVER[$CURRENT_PACKAGE]}
+        fi
     fi
 
     return $save_rc
@@ -285,14 +293,16 @@ DO_MENU_VERSION(){
 	   --menu "$VState\n" $VMHEIGHT $VMWIDTH $VMCNT \
 	   "${VOPTIONS[@]}" 2>$RESULT_FILE
     save_rc=$?
-    ACTION=$(<$RESULT_FILE)
-    MENU="main"
+    if [ $save_rc -eq 0 ];then
+        ACTION=$(<$RESULT_FILE)
+        MENU="main"
 
-    if [ "$ACTION" == "0" ];then
-       return
-    elif echo ":$ALT:"|grep -q ":$ACTION:";then
+        if [ "$ACTION" == "0" ];then
+            return
+        elif echo ":$ALT:"|grep -q ":$ACTION:";then
 	    TaskNo=$(($ACTION*2+1))
             CURRENT_VERSION=${VOPTIONS[$TaskNo]}
+        fi
     fi
 
     return $save_rc
@@ -302,29 +312,47 @@ DO_MENU_VERSION(){
 #
 DO_CHANGE_STAGE(){
     DIR="$1"  # Increase or Decrease
-    WHAT="$2" # package name
 
-    PKG_INFO="${PKGSTAGE[$WHAT]}"
-    PKG_STAGE=$(echo "$PKG_INFO"|awk '{print $1}')
-    PKG_VER=$(echo "$PKG_INFO"|awk '{print $2}')
     unset CMD
 
     for codename in ${OS_CODENAME};do
-        PKGPATH=${DIRPATH}/${codename}/$PKG_STAGE/binary-all/$WHAT-$PKG_VER.deb
-
+        # find last stage that it currently exist at
         for i in ${!STAGES[*]};do
-	    [ "${STAGES[i]}" == $PKG_STAGE ] && break
+            CANDIDATE=${DIRPATH}/${codename}/${STAGES[i]}/binary-all/$CURRENT_PACKAGE-$CURRENT_VERSION.deb
+            [ -e  $CANDIDATE ] && PKGPATH=$CANDIDATE && PKG_STAGE=${STAGES[i]} && STAGE_LEVEL=$i
         done
 
-        if [[ "$DIR" =~ ^D ]];then
-	    [ $i -ge 1 ] && CMD="rm -fv $PKGPATH ${DIRPATH}/${codename}/$PKG_STAGE/binary-all/Packages.gz" || CMD="# already first level, nothing to do"
-        elif [[ "$DIR" =~ ^I ]];then
-	    NEWPKGDIR=${DIRPATH}/${codename}/${STAGES[$(($i+1))]}/binary-all
-	    NEWPKGPATH=$NEWPKGDIR/$WHAT-$PKG_VER.deb
-	    if [ $i -lt $((${#STAGES[*]}-1)) ];then
-                CMD=("cp -av $PKGPATH $NEWPKGPATH" "rm -fv ${DIRPATH}/${codename}/$PKG_STAGE/binary-all/Packages.gz $NEWPKGDIR/Packages.gz")
+        if [[ "$DIR" =~ ^D ]];then # direction = decrease
+	    if [ $STAGE_LEVEL -ge 1 ];then
+                if [ -n "$PKG_STAGE" -a -d ${DIRPATH}/${codename}/$PKG_STAGE/ ];then
+                    CMD="rm -fv $PKGPATH ${DIRPATH}/${codename}/$PKG_STAGE/binary-all/Packages.gz"
+                else
+                    CMD="# No level to go down from for $CURRENT_PACKAGE $CURRENT_VERSION"
+                fi
             else
-                CMD="# already last level, nothing to do"
+                CMD="# already first level, nothing to do for $CURRENT_PACKAGE $CURRENT_VERSION"
+            fi
+        elif [[ "$DIR" =~ ^I ]];then # direction = increase
+            if [ -n "$PKG_STAGE" ];then
+	        if [ $STAGE_LEVEL -lt $((${#STAGES[*]}-1)) ];then
+	            NEWPKGDIR=${DIRPATH}/${codename}/${STAGES[$(($STAGE_LEVEL+1))]}/binary-all
+	            NEWPKGPATH=$NEWPKGDIR/$CURRENT_PACKAGE-$CURRENT_VERSION.deb
+                    CMD=("cp -av $PKGPATH $NEWPKGPATH" "rm -fv ${DIRPATH}/${codename}/$PKG_STAGE/binary-all/Packages.gz $NEWPKGDIR/Packages.gz")
+                else
+                    CMD="# already last level, nothing to do for $PKG_INFO ($CURRENT_PACKAGE)"
+                fi
+            else
+                # if [ ! -e  ${DIRPATH}/${codename}/${STAGES[$STAGE_LEVEL]}/binary-all/$CURRENT_PACKAGE-$CURRENT_VERSION.deb ];then
+                #     NEWPKGDIR=${DIRPATH}/${codename}/${STAGES[$(($STAGE_LEVEL))]}/binary-all
+                #     NEWPKGPATH=$NEWPKGDIR/$CURRENT_PACKAGE-$CURRENT_VERSION.deb
+	        #     if [ $STAGE_LEVEL -lt $((${#STAGES[*]}-1)) ];then
+                #         CMD=("cp -av $PKGPATH $NEWPKGPATH" "rm -fv ${DIRPATH}/${codename}/$PKG_STAGE/binary-all/Packages.gz $NEWPKGDIR/Packages.gz")
+                #     else
+                #         CMD="# already last level, nothing to do for $PKG_INFO ($CURRENT_PACKAGE)"
+                #     fi
+                # else
+                CMD="# No level found for $CURRENT_PACKAGE-$CURRENT_VERSION"
+                # fi
             fi
         else
 	    DEB+="ERRROR, unknown direction:$DIR"
@@ -383,6 +411,13 @@ elif [ "$1" == "--show-path" ];then
     echo "================================================================"
     exit
 elif [ "$1" == "--show-versions" ];then
+    #CURRENT_PACKAGE=ba-btm-test
+    #CURRENT_VERSION=0.0-4.0xenial16
+    #DO_COLLECT_VERSIONS
+
+    #CURRENT_PACKAGE=ba-btm-software
+    #CURRENT_VERSION=0.0-4.0xenial16
+
     DO_COLLECT_VERSIONS
 
     for PACKAGE in ${PACKAGES[*]};do
@@ -400,7 +435,7 @@ elif [ "$1" == "--show-versions" ];then
     done
 
     echo "****************************************************************"
-    echo "show lines"
+    echo "show PKG_LINES"
     # echo "===="
     # echo ${PKG_LINES[*]}
     # echo "===="
@@ -415,6 +450,25 @@ elif [ "$1" == "--show-versions" ];then
 
     echo end of PKG_LINES
     echo "================================================================"
+
+    echo "****************************************************************"
+    echo " PKGSTAGE"
+    # echo "===="
+    # echo ${PKGSTAGE[*]}
+    # echo "===="
+    # echo ${!PKGSTAGE[*]}
+    # echo "===="
+    # echo ${#PKGSTAGE[*]}
+    # echo "===="
+
+    #for line in $(seq 0 $((${#PKGSTAGE[*]}-1)));do
+    for line in ${!PKGSTAGE[*]};do
+        printf "%20s: %s\n" "$line" "${PKGSTAGE[$line]}"
+    done
+
+    echo end of PKGSTAGE
+    echo "================================================================"
+
     exit
 fi
 
@@ -469,9 +523,22 @@ while true;do
     elif [ "$MENU" == "package" ];then
         DO_MENU_PACKAGE $RESULT_FILE
         save_rc=$?
+        if [ $save_rc -eq 1 ];then # selected "cancel"
+            dialog --infobox "\n    action cancelled"  5 30
+            exit
+        elif [ $save_rc -eq 255 ];then # hit escape
+            dialog --infobox "\n  <esc> - action aborted"  5 30
+            exit
+        fi
     elif [ "$MENU" == "version" ];then
         DO_MENU_VERSION $RESULT_FILE
         save_rc=$?
-        ACTION=$(<$RESULT_FILE)
+        if [ $save_rc -eq 1 ];then # selected "cancel"
+            dialog --infobox "\n    action cancelled"  5 30
+            exit
+        elif [ $save_rc -eq 255 ];then # hit escape
+            dialog --infobox "\n  <esc> - action aborted"  5 30
+            exit
+        fi
     fi
 done
