@@ -384,12 +384,7 @@ DO_CHANGE_STAGE(){
 
 
 #Mostly debug/verify
-if [ "$1" == "--help" ];then
-    echo "this options are mostly for verification/debugging"
-    echo "$0 --show-path"
-    echo "$0 --show-versions"
-    exit
-elif [ "$1" == "--show-path" ];then
+if [ "$1" == "--show-path" ];then
     echo "Staging directories:"
     SPACES="$(printf -- ' %.0s' {1..255})"
     PREFIX=""
@@ -445,7 +440,8 @@ elif [ "$1" == "--show-versions" ];then
     # echo "===="
 
     for line in $(seq 0 $((${#PKG_LINES[*]}-1)));do
-        printf "%2d: %s\n" "$line" "${PKG_LINES[$line]}"
+        #printf "%2d: %s\n" "$line" "${PKG_LINES[$line]}"
+        printf "%20s  %-12s %-25s \n" $(echo ${PKG_LINES[$line]}|tr ',' ' ')
     done
 
     echo end of PKG_LINES
@@ -469,6 +465,26 @@ elif [ "$1" == "--show-versions" ];then
     echo end of PKGSTAGE
     echo "================================================================"
 
+    exit
+elif [ "$1" == "--show-state" -o "$1" == "--show-stages" ];then
+
+    DO_COLLECT_VERSIONS
+    PREVPKG=""
+    date +%F\ %T
+    for line in $(seq 0 $((${#PKG_LINES[*]}-1)));do
+        PKG=$(echo ${PKG_LINES[$line]}|cut -d, -f1)
+        STAGE=$(echo ${PKG_LINES[$line]}|cut -d, -f2)
+        VERSION=$(echo ${PKG_LINES[$line]}|cut -d, -f3)
+        [ "$PKG" != "$PREVPKG" ] && echo "$PKG:" && PREVPKG=$PKG
+        printf " %-12s %-25s \n" $STAGE $VERSION
+    done
+    exit
+#elif [ "$1" == "--help" ];then
+elif [ -n "$1" ];then
+    echo "this options are mostly for verification/debugging"
+    echo "$0 --show-path"
+    echo "$0 --show-versions"
+    echo "$0 --show-stages"
     exit
 fi
 
