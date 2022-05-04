@@ -21,6 +21,19 @@ for i in $(find $PREFIX/dists/upload -type d);do
     done
 done
 
+#cleanup
+MAXAGE=90 #delete development files older thna 90 days
+for i in $(find $PREFIX/dists -type d -name binary-all);do
+    STAGE=$(echo ${i/*dists\//}|cut -d/ -f1)
+    echo "$STAGE"|grep -Eq "$(echo development qa staging stage{1..5}|tr ' ' '|')" && continue # don't clean the "official" stages
+    if find $i -type f -name "*.deb" -mtime +$MAXAGE|grep -q .;then
+        find $i -type f -name "*.deb" -mtime +$MAXAGE -delete
+        rm -f $i/Packages.gz
+        rmdir $i ${i/\/binary-all} &>/dev/null || true
+    fi
+done
+
+
 exit_rc=0
 [ -z "$TMPDIR" ] && TMPDIR=$(eval echo ~/tmp)
 [ ! -d "$TMPDIR" ] && mkdir -p $TMPDIR && chmod 700 $TMPDIR
@@ -45,4 +58,5 @@ for i in $(find $PREFIX/dists/ -type d -name binary-all);do
         fi
     fi
 done
+
 exit $exit_rc
