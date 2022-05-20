@@ -9,15 +9,16 @@ cd $PREFIX || exit
 for i in $(find $PREFIX/dists/upload -type d);do
     STAGE=${i/*upload\//}
     [ "$STAGE" == "$i" ] && STAGE=development
+    [ ! -d $PREFIX/dists/$STAGE/binary-all ] && mkdir -p $PREFIX/dists/$STAGE/binary-all
     
-    for PACKAGE in $((cd $i;ls *.deb 2>/dev/null)|sed 's/\(^[a-zA-Z-]*\)-[0-9]*[-\.]*.*/\1/'|sort -u);do
-        LATEST=$(ls $i/${PACKAGE}*.deb|sort --version-sort|tail -1)
-        [ ! -d $PREFIX/dists/$STAGE/binary-all ] && mkdir -p $PREFIX/dists/$STAGE/binary-all
-        if [ ! -e $PREFIX/dists/$STAGE/binary-all/${LATEST##*/} ];then
-            echo "copying $LATEST to $PREFIX/dists/$STAGE/"
-            cp -av $LATEST $PREFIX/dists/$STAGE/binary-all/
-            rm -f $PREFIX/dists/$STAGE/binary-all/Packages.gz
-        fi
+    for PACKAGES in $((cd $i;ls *.deb 2>/dev/null)|sed 's/\(^[a-zA-Z-]*\)-[0-9]*[-\.]*.*/\1/'|sort -u);do
+        for PACKAGE in $(ls $i/${PACKAGE}*.deb 2>/dev/null|sort --version-sort);do
+            if [ ! -e $PREFIX/dists/$STAGE/binary-all/${PACKAGE##*/} ];then
+                echo "copying $PACKAGE to $PREFIX/dists/$STAGE/"
+                cp -av $PACKAGE $PREFIX/dists/$STAGE/binary-all/
+                rm -f $PREFIX/dists/$STAGE/binary-all/Packages.gz
+            fi
+        done
     done
 done
 
