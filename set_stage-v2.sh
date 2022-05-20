@@ -9,6 +9,7 @@
 DIRPATH=/var/www/html/bitaccess/dists
 OS_CODENAME=(xenial focal)
 STAGES=($(echo {development,qa,staging,stage{1..5}}))
+STAGELOG=/root/logs/stage_logs.csv
 #PACKAGES=("docker_cloud_btm" "provisioner") # package name can't include "_"
 #PACKAGES=("docker-btm" "provisioner")
 #PACKAGES=(ba-btm-software ba-test)
@@ -326,6 +327,7 @@ DO_CHANGE_STAGE(){
 	    if [ $STAGE_LEVEL -ge 1 ];then
                 if [ -n "$PKG_STAGE" -a -d ${DIRPATH}/${codename}/$PKG_STAGE/ ];then
                     CMD="rm -fv $PKGPATH ${DIRPATH}/${codename}/$PKG_STAGE/binary-all/Packages.gz"
+                    echo "$(date +%F\ %T),$CURRENT_PACKAGE,$CURRENT_VERSION,$codename,$PKG_STAGE,$DIR" >>$STAGELOG
                 else
                     CMD="# No level to go down from for $CURRENT_PACKAGE $CURRENT_VERSION"
                 fi
@@ -338,6 +340,7 @@ DO_CHANGE_STAGE(){
 	            NEWPKGDIR=${DIRPATH}/${codename}/${STAGES[$(($STAGE_LEVEL+1))]}/binary-all
 	            NEWPKGPATH=$NEWPKGDIR/$CURRENT_PACKAGE-$CURRENT_VERSION.deb
                     CMD=("cp -av $PKGPATH $NEWPKGPATH" "rm -fv ${DIRPATH}/${codename}/$PKG_STAGE/binary-all/Packages.gz $NEWPKGDIR/Packages.gz")
+                    echo "$(date +%F\ %T),$CURRENT_PACKAGE,$CURRENT_VERSION,$codename,$PKG_STAGE,$DIR" >>$STAGELOG
                 else
                     CMD="# already last level, nothing to do for $PKG_INFO ($CURRENT_PACKAGE)"
                 fi
