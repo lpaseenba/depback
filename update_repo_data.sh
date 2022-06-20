@@ -9,13 +9,22 @@ cd $PREFIX || exit
 for i in $(find $PREFIX/dists/upload -type d);do
     STAGE=${i/*upload\//}
     [ "$STAGE" == "$i" ] && STAGE=development
-    [ ! -d $PREFIX/dists/$STAGE/binary-all ] && mkdir -p $PREFIX/dists/$STAGE/binary-all
+    [ "$STAGE" == "master" ] && DSTAGE=development || DSTAGE=$STAGE
+    [ ! -d $PREFIX/dists/$DSTAGE/binary-all ] && mkdir -p $PREFIX/dists/$DSTAGE/binary-all
+    [ ! -L $PREFIX/dists/$DSTAGE/binary-amd64 ] && ln -s binary-all $PREFIX/dists/$DSTAGE/binary-amd64
+    [ ! -L $PREFIX/dists/$DSTAGE/binary-i386 ] && ln -s binary-all $PREFIX/dists/$DSTAGE/binary-i386
+    #[ "$STAGE" == "alert_fallout1" ] && set -x || set +x #PSDEBUG
+    #echo "PSDEBUG1 - i=\"$i\", STAGE=$STAGE"
+    #echo "    cd $i;ls *.deb 2>/dev/null)|sed 's/\(^[a-zA-Z-]*\)-[0-9]*[-\.]*.*/\1/'|sort -u"
     
-    for PACKAGES in $((cd $i;ls *.deb 2>/dev/null)|sed 's/\(^[a-zA-Z-]*\)-[0-9]*[-\.]*.*/\1/'|sort -u);do
-        for PACKAGE in $(ls $i/${PACKAGE}*.deb 2>/dev/null|sort --version-sort);do
-            if [ ! -e $PREFIX/dists/$STAGE/binary-all/${PACKAGE##*/} ];then
-                echo "copying $PACKAGE to $PREFIX/dists/$STAGE/"
-                cp -av $PACKAGE $PREFIX/dists/$STAGE/binary-all/
+    for PACKAGE in $((cd $i;ls *.deb 2>/dev/null)|sed 's/\(^[a-zA-Z-]*\)-[0-9]*[-\.]*.*/\1/'|sort -u);do
+        #echo "PSDEBUG2 - PACKAGE=\"$PACKAGE\""
+        #echo "    ls $i/${PACKAGE}*.deb 2>/dev/null|sort --version-sort"
+        for PACKAGEVER in $(ls $i/${PACKAGE}*.deb 2>/dev/null|sort --version-sort);do
+            #echo "PSDEBUG3  - PACKAGEVER=\"$PACKAGEVER\""
+            if [ ! -e $PREFIX/dists/$DSTAGE/binary-all/${PACKAGEVER##*/} ];then
+                echo "copying $PACKAGEVER to $PREFIX/dists/$DSTAGE/"
+                cp -av $PACKAGEVER $PREFIX/dists/$DSTAGE/binary-all/
                 rm -f $PREFIX/dists/$STAGE/binary-all/Packages.gz
             fi
         done
