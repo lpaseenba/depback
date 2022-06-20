@@ -473,7 +473,7 @@ elif [ "$1" == "--show-state" -o "$1" == "--show-stages" ];then
 
     DO_COLLECT_VERSIONS
     PREVPKG=""
-    date +%F\ %T
+    date +%F\ %T\ %Z
     for line in $(seq 0 $((${#PKG_LINES[*]}-1)));do
         PKG=$(echo ${PKG_LINES[$line]}|cut -d, -f1)
         STAGE=$(echo ${PKG_LINES[$line]}|cut -d, -f2)
