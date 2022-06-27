@@ -7,6 +7,7 @@ cd $PREFIX || exit
 
 #First check if any new package is in upload
 for i in $(find $PREFIX/dists/upload -type d);do
+    [[ "$i" =~ "$PREFIX/dists/upload/refs" ]] && continue
     STAGE=${i/*upload\//}
     [ "$STAGE" == "$i" ] && STAGE=development
     [ "$STAGE" == "master" ] && DSTAGE=development || DSTAGE=$STAGE
@@ -22,7 +23,9 @@ for i in $(find $PREFIX/dists/upload -type d);do
         #echo "    ls $i/${PACKAGE}*.deb 2>/dev/null|sort --version-sort"
         for PACKAGEVER in $(ls $i/${PACKAGE}*.deb 2>/dev/null|sort --version-sort);do
             #echo "PSDEBUG3  - PACKAGEVER=\"$PACKAGEVER\""
-            if [ ! -e $PREFIX/dists/$DSTAGE/binary-all/${PACKAGEVER##*/} ];then
+            #check if the same package already exist
+            #if [ ! -e $PREFIX/dists/$DSTAGE/binary-all/${PACKAGEVER##*/} ];then
+            if ! diff -q $PACKAGEVER $PREFIX/dists/$DSTAGE/binary-all/${PACKAGEVER##*/} &>/dev/null;then
                 echo "copying $PACKAGEVER to $PREFIX/dists/$DSTAGE/"
                 cp -av $PACKAGEVER $PREFIX/dists/$DSTAGE/binary-all/
                 rm -f $PREFIX/dists/$STAGE/binary-all/Packages.gz
