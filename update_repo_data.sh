@@ -7,10 +7,13 @@ cd $PREFIX || exit
 
 #First check if any new package is in upload
 for i in $(find $PREFIX/dists/upload -type d);do
+
     [[ "$i" =~ "$PREFIX/dists/upload/refs" ]] && continue
+    [ "$i" == "$PREFIX/dists/upload/release" ] && continue
     STAGE=${i/*upload\//}
     [ "$STAGE" == "$i" ] && STAGE=development
-    [ "$STAGE" == "master" ] && DSTAGE=development || DSTAGE=$STAGE
+    DSTAGE="${STAGE/release\//}"
+    [ "$STAGE" == "master" ] && DSTAGE=development
     [ ! -d $PREFIX/dists/$DSTAGE/binary-all ] && mkdir -p $PREFIX/dists/$DSTAGE/binary-all
     [ ! -L $PREFIX/dists/$DSTAGE/binary-amd64 ] && ln -s binary-all $PREFIX/dists/$DSTAGE/binary-amd64
     [ ! -L $PREFIX/dists/$DSTAGE/binary-i386 ] && ln -s binary-all $PREFIX/dists/$DSTAGE/binary-i386
@@ -26,7 +29,7 @@ for i in $(find $PREFIX/dists/upload -type d);do
             #check if the same package already exist
             #if [ ! -e $PREFIX/dists/$DSTAGE/binary-all/${PACKAGEVER##*/} ];then
             if ! diff -q $PACKAGEVER $PREFIX/dists/$DSTAGE/binary-all/${PACKAGEVER##*/} &>/dev/null;then
-                echo "copying $PACKAGEVER to $PREFIX/dists/$DSTAGE/"
+                echo "$(date +%F\ %T); copying $PACKAGEVER to $PREFIX/dists/$DSTAGE/"
                 cp -av $PACKAGEVER $PREFIX/dists/$DSTAGE/binary-all/
                 rm -f $PREFIX/dists/$STAGE/binary-all/Packages.gz
             fi
@@ -35,7 +38,7 @@ for i in $(find $PREFIX/dists/upload -type d);do
 done
 
 #cleanup
-MAXAGE=90 #delete development files older thna 90 days
+MAXAGE=90 #delete development files older than 90 days
 for i in $(find $PREFIX/dists -type d -name binary-all);do
     STAGE=$(echo ${i/*dists\//}|cut -d/ -f1)
     echo "$STAGE"|grep -Eq "$(echo development qa staging stage{1..5}|tr ' ' '|')" && continue # don't clean the "official" stages
@@ -56,13 +59,13 @@ LEN=$(echo -n "$PREFIX"|wc -c);let LEN++
 for i in $(find $PREFIX/dists/ -type d -name binary-all);do
     # make sure the newest file is the Packages.gz file
     if ! ls -dlrt $i/* 2>/dev/null|tail -1|grep -q $i/Packages.gz;then
-        echo "Creating $i/Packages.gz"
+        echo "$(date +%F\ %T); Creating $i/Packages.gz"
         if [ -z "$DEBUG" ];then
             (cd $PREFIX;dpkg-scanpackages ${i:$LEN} 2>$RESULT| gzip -c9 >$i/Packages.gz)
             save_rc=${PIPESTATUS[0]};[ $exit_rc -lt $save_rc ] && exit_rc=$save_rc
             if [ $save_rc -ne 0 ];then
                 cat $RESULT
-                echo -e "****************\n**************** FAILURE on line $BASH_SOURCE:$LINENO - dpkg-scanpackages ${i:$LEN}\n****************\n"
+                echo -e "$(date +%F\ %T)\n****************\n**************** FAILURE on line $BASH_SOURCE:$LINENO - dpkg-scanpackages ${i:$LEN}\n****************\n"
                 rm -f $i/Packages.gz
             fi
         else
